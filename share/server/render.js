@@ -164,6 +164,30 @@ var Render = (function() {
     chunks = [];
   };
 
+  var events = {};
+  var hasEvents = false;
+  function on(event, fn) {
+    if (event == 'reset') { 
+      events = {}; 
+      hasEvents = false;
+      return; 
+    }
+    if (event == "noEvents" && !hasEvents) {
+      return fn();
+    }
+    if (event == "Events" && hasEvents) {
+      return fn();
+    }
+    hasEvents = true;
+    if (!events[event]) { events[event] = []; }
+    events[event].push(fn);
+  };
+
+  var toStop = undefined;
+  function stop(obj) {
+    toStop = obj;
+  }
+
   var gotRow = false, lastRow = false;
   function getRow() {
     if (lastRow) return null;
@@ -275,6 +299,7 @@ var Render = (function() {
     gotRow = false;
     lastRow = false;
     chunks = [];
+    toStop = undefined;
     startResp = {};
   };
 
@@ -284,16 +309,42 @@ var Render = (function() {
       resetList();
       head = args[0]
       req = args[1]
+      on('reset');
       var tail = listFun.apply(ddoc, args);
-
-      if (Mime.providesUsed) {
-        tail = Mime.runProvides(req);
-      }    
-      if (!gotRow) getRow();
-      if (typeof tail != "undefined") {
-        chunks.push(tail);
-      }
-      blowChunks("end");
+      on('noEvents', function() {
+        if (Mime.providesUsed) {
+          tail = Mime.runProvides(req);
+        }
+        if (!gotRow) getRow();
+        if (typeof tail != "undefined") {
+          chunks.push(tail);
+        }
+        blowChunks("end");
+      });
+      on('Events', function() {
+        resetList();
+        for(var i in events.head) {
+          events.head[i]();
+        }
+        startResp = applyContentType((startResp || {}), Mime.responseContentType);
+        var row;
+        while(typeof(toStop) == "undefined" && (row = getRow())) {
+          for(var i in events.row) {
+            events.row[i](row);
+          }
+        }
+        if (typeof(toStop) != "undefined") {
+          send(toStop);
+          blowChunks("end");
+          return;
+        }
+        resetList();
+        for(var i in events.tail) {
+          var ret = events.tail[i]();
+          (typeof(ret) != "undefined") && send(ret);
+        }
+        blowChunks("end");
+      });
     } catch(e) {
       renderError(e, listFun.toSource());
     }
@@ -320,6 +371,8 @@ var Render = (function() {
     start : start,
     send : send,
     getRow : getRow,
+    on: on,
+    stop: stop,
     show : function(fun, ddoc, args) {
       // var showFun = Couch.compileFunction(funSrc);
       runShow(fun, ddoc, args);

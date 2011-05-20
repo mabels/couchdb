@@ -22,6 +22,8 @@
 
 COUCH_ROOT = "#{File.dirname(__FILE__)}/../.." unless defined?(COUCH_ROOT)
 LANGUAGE = ENV["QS_LANG"] || "js"
+COUCH_JS = ENV["QS_PROCESSOR"] || "#{COUCH_ROOT}/bin/couchjs_dev"
+HOME = ENV["HOME"]
 
 puts "Running query server specs for #{LANGUAGE} query server"
 
@@ -116,7 +118,7 @@ end
 class QueryServerRunner < OSProcessRunner
 
   COMMANDS = {
-    "js" => "#{COUCH_ROOT}/bin/couchjs_dev #{COUCH_ROOT}/share/server/main.js",
+    "js"  => "#{COUCH_JS} #{COUCH_ROOT}/share/server/main.js",
     "erlang" => "#{COUCH_ROOT}/test/view_server/run_native_process.es"
   }
 
@@ -222,10 +224,14 @@ functions = {
   "show-sends" => {
     "js" =>  <<-JS,
         function(head, req) {
-          start({headers:{"Content-Type" : "text/plain"}});
-          send("first chunk");
-          send('second "chunk"');
-          return "tail";
+          on("head", function() {
+            start({headers:{"Content-Type" : "text/plain"}});
+            send("first chunk");
+            send('second "chunk"');
+          })
+          on("tail", function() {
+            return "tail";
+          });
         };
     JS
     "erlang" => <<-ERLANG
@@ -243,14 +249,16 @@ functions = {
   "show-while-get-rows" => {
     "js" =>  <<-JS,
         function(head, req) {
-          send("first chunk");
-          send(req.q);
-          var row;
-          log("about to getRow " + typeof(getRow));
-          while(row = getRow()) {
+          on('head', function() {
+            send("first chunk");
+            send(req.q);
+          });
+          on('row', function(row) {
             send(row.key);
-          };
-          return "tail";
+          });
+          on('tail', function() {
+            return "tail";
+          });
         };
     JS
     "erlang" => <<-ERLANG,
@@ -269,14 +277,16 @@ functions = {
   "show-while-get-rows-multi-send" => {
     "js" => <<-JS,
         function(head, req) {
-          send("bacon");
-          var row;
-          log("about to getRow " + typeof(getRow));
-          while(row = getRow()) {
+          on('head', function() {
+            send("bacon");
+          });
+          on('row', function(row) {
             send(row.key);
             send("eggs");
-          };
-          return "tail";
+          });
+          on('tail', function() {
+            return "tail";
+          })
         };
     JS
     "erlang" => <<-ERLANG,
@@ -295,13 +305,16 @@ functions = {
   "list-simple" => {
     "js" => <<-JS,
         function(head, req) {
-          send("first chunk");
-          send(req.q);
-          var row;
-          while(row = getRow()) {
+          on('head', function() {
+            send("first chunk");
+            send(req.q);
+          });
+          on('row', function(row) {
             send(row.key);
-          };
-          return "early";
+          });
+          on('tail', function() {
+            return "early";
+          });
         };
     JS
     "erlang" => <<-ERLANG,
@@ -320,16 +333,18 @@ functions = {
   "list-chunky" => {
     "js" => <<-JS,
         function(head, req) {
-          send("first chunk");
-          send(req.q);
-          var row, i=0;
-          while(row = getRow()) {
+          on('head', function() {
+            send("first chunk");
+            send(req.q);
+          });
+          var i=0;
+          on('row', function(row) {
             send(row.key);
             i += 1;
             if (i > 2) {
-              return('early tail');
+              stop('early tail');
             }
-          };
+          });
         };
     JS
     "erlang" => <<-ERLANG,
@@ -364,15 +379,17 @@ functions = {
   "list-capped" => {
     "js" => <<-JS,
         function(head, req) {
-          send("bacon")
-          var row, i = 0;
-          while(row = getRow()) {
+          on('head', function() {
+            send("bacon");
+          });
+          var i = 0;
+          on('row', function(row) {
             send(row.key);
             i += 1;
             if (i > 2) {
-              return('early');
+              stop('early');
             }
-          };
+          });
         }
     JS
     "erlang" => <<-ERLANG,
@@ -396,13 +413,16 @@ functions = {
         function(head, req) {
           // log(this.toSource());
           // log(typeof send);
-          send("first chunk");
-          send(req.q);
-          var row;
-          while(row = getRow()) {
-            send(row.key);
-          };
-          return "tail";
+          on('head', function() {
+            send('first chunk');
+             send(req.q);
+           });
+           on('row', function(row) {
+             send(row.key);
+           });
+          on('tail', function() {
+            return "tail";
+          });
         };
     JS
     "erlang" => <<-ERLANG,
@@ -489,7 +509,7 @@ end
 
 describe "query server normal case" do
   before(:all) do
-    `cd #{COUCH_ROOT} && make`
+#    `cd #{COUCH_ROOT} && make`
     @qs = QueryServerRunner.run
   end
   after(:all) do
@@ -694,7 +714,7 @@ describe "query server normal case" do
           @qs.jsgets.should == ["end", ["tail"]]
         end
       end
-
+#
       describe "with rows" do
         it "should list em" do
           @qs.ddoc_run(@ddoc, ["lists","rows"], 
@@ -715,7 +735,7 @@ describe "query server normal case" do
           @qs.jsgets.should == ["end", ["tail"]]
         end
       end
-      
+#      
       describe "should buffer multiple chunks sent for a single row." do
         it "should should buffer em" do
           @qs.ddoc_run(@ddoc, ["lists","buffer-chunks"],
@@ -748,9 +768,9 @@ describe "query server normal case" do
       end
     end
   end
-
-
-
+#
+#
+#
 def should_have_exited qs
   begin
     qs.run(["reset"])
@@ -788,7 +808,7 @@ describe "query server that exits" do
         should == ["start", ["bacon"], {"headers"=>{}}]
       @qs.run(["list_row", {"key"=>"baz"}]).should ==  ["chunks", ["baz"]]
       @qs.run(["list_row", {"key"=>"foom"}]).should == ["chunks", ["foom"]]
-      @qs.run(["list_row", {"key"=>"fooz"}]).should == ["end", ["fooz", "early"]]
+      @qs.run(["list_row", {"key"=>"xfooz"}]).should == ["end", ["xfooz", "early"]]
       e = @qs.run(["list_row", {"key"=>"foox"}])
       e[0].should == "error"
       e[1].should == "unknown_command"
