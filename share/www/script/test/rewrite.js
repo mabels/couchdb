@@ -148,18 +148,22 @@ couchTests.rewrite = function(debug) {
           ],
           lists: {
             simpleForm: stringFun(function(head, req) {
-              log("simpleForm");
-              send('<ul>');
+              on('head', function() {
+                log("simpleForm");
+                send('<ul>');
+              })
               var row, row_number = 0, prevKey, firstKey = null;
-              while (row = getRow()) {
+              on('row', function(row) {
                 row_number += 1;
                 if (!firstKey) firstKey = row.key;
                 prevKey = row.key;
                 send('\n<li>Key: '+row.key
                 +' Value: '+row.value
                 +' LineNo: '+row_number+'</li>');
-              }
-              return '</ul><p>FirstKey: '+ firstKey + ' LastKey: '+ prevKey+'</p>';
+              })
+              on('tail', function() {
+                return '</ul><p>FirstKey: '+ firstKey + ' LastKey: '+ prevKey+'</p>';
+              })
             }),
           },
           shows: {

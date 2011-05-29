@@ -29,117 +29,123 @@ couchTests.list_spatial = function(debug) {
     },
     lists: {
       basicBasic : stringFun(function(head, req) {
-        send("head");
+        on("head", function() { send("head"); })
         var row;
-        while(row = getRow()) {
+        on("row", function(row) {
           log("row: "+toJSON(row));
           send(row.id);
           //send("row");
-        };
-        return "tail";
+        })
+        on("tail", function() { return "tail"; });
       }),
       basicJSON : stringFun(function(head, req) {
-        start({"headers":{"Content-Type" : "application/json"}});
-        send('{"head":'+toJSON(head)+', ');
-        send('"req":'+toJSON(req)+', ');
-        send('"rows":[');
+        on("head", function() { 
+          start({"headers":{"Content-Type" : "application/json"}});
+          send('{"head":'+toJSON(head)+', ');
+          send('"req":'+toJSON(req)+', ');
+          send('"rows":[');
+        });
         var row, sep = '';
-        while (row = getRow()) {
+        on("row", function(row) {
           send(sep + toJSON(row));
           sep = ', ';
-        }
-        return "]}";
+        })
+        on("tail", function() { return "]}"; });
       }),
       simpleForm: stringFun(function(head, req) {
-        log("simpleForm");
-        send('<ul>');
+        on("head", function() { 
+          log("simpleForm");
+          send('<ul>');
+        })
         var row, row_number = 0, prevKey, firstKey = null;
-        while (row = getRow()) {
+        on("row", function(row) {
           row_number += 1;
           if (!firstKey) firstKey = row.key;
           prevKey = row.key;
           send('\n<li>Key: '+row.key
           +' Value: '+row.value
           +' LineNo: '+row_number+'</li>');
-        }
-        return '</ul><p>FirstKey: '+ firstKey + ' LastKey: '+ prevKey+'</p>';
+        })
+        on("tail", function() { 
+          return '</ul><p>FirstKey: '+ firstKey + ' LastKey: '+ prevKey+'</p>';
+        })
       }),
       acceptSwitch: stringFun(function(head, req) {
         // respondWith takes care of setting the proper headers
         provides("html", function() {
-          send("HTML <ul>");
-
+          on("head", function() { send("HTML <ul>"); });
           var row, num = 0;
-          while (row = getRow()) {
+          on("row", function(row) {
             num ++;
             send('\n<li>Key: '
               +row.key+' Value: '+row.value
               +' LineNo: '+num+'</li>');
-          }
+          })
 
           // tail
-          return '</ul>';
+          on("tail", function() { return '</ul>'; });
         });
 
         provides("xml", function() {
-          send('<feed xmlns="http://www.w3.org/2005/Atom">'
-            +'<title>Test XML Feed</title>');
-
-          while (row = getRow()) {
+          on("head", function() { 
+            send('<feed xmlns="http://www.w3.org/2005/Atom">'
+              +'<title>Test XML Feed</title>');
+          })
+          on("row", function(row) {
             var entry = new XML('<entry/>');
             entry.id = row.id;
             entry.title = row.key;
             entry.content = row.value;
             send(entry);
-          }
-          return "</feed>";
+          })
+          on("tail", function() { return '</feed>'; });
         });
       }),
       qsParams: stringFun(function(head, req) {
         return toJSON(req.query) + "\n";
       }),
       stopIter: stringFun(function(req) {
-        send("head");
+        on("head", function() { send("head"); })
         var row, row_number = 0;
-        while(row = getRow()) {
+        on("row", function(row) {
           if(row_number > 2) break;
           send(" " + row_number);
           row_number += 1;
-        };
-        return " tail";
+        })
+        on("tail", function() { return " tail"; })
       }),
       stopIter2: stringFun(function(head, req) {
         provides("html", function() {
-          send("head");
+          on("head", function() { send("head"); })
           var row, row_number = 0;
-          while(row = getRow()) {
+          on("row", function(row) {
             if(row_number > 2) break;
             send(" " + row_number);
             row_number += 1;
-          };
-          return " tail";
+          })
+          on("tail", function() { return " tail"; })
         });
       }),
       tooManyGetRows : stringFun(function() {
-        send("head");
+        on("head", function() { send("head"); })
         var row;
-        while(row = getRow()) {
+        on("row", function(row) {
           send(row.id);
-        };
+        })
         getRow();
         getRow();
         getRow();
         row = getRow();
-        return "after row: "+toJSON(row);
+        on("tail", function() { return "after row: "+toJSON(row); })
       }),
       emptyList: stringFun(function() {
         return " ";
       }),
       rowError : stringFun(function(head, req) {
-        send("head");
+        on("head", function() { send("head"); })
         var row = getRow();
         send(fooBarBam); // intentional error
-        return "tail";
+        on("tail", function() { return "tail"; })
       }),
       listWithCommonJs: stringFun(function() {
         var lib = require('somelib');
